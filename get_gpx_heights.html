@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+	<!-- This html/javascript glued together from seznam.cz Mapy API examples. It's ugly but it seems to work. YOLO -->
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+        <title>api4.mapy.cz - gpx zaznam</title>
+        <script type="text/javascript" src="https://api.mapy.cz/loader.js"></script>
+        <script type="text/javascript">Loader.load();</script>
+	</head>
+    <body id="advanced-markers">
+		
+        Zde vlozte obsah GPX souboru. Budou nacteny vysky cesty (track), ktera je v gpx ulozena jako prvni.<br/>
+        <textarea id="gpx"></textarea>
+        <input type="button" value="Zobrazit" onclick="load()" />
+        <hr/>
+        <div id="m" style="height:340px"></div>
+		<p id="output_text"></p>
+		
+		<script type="text/javascript">
+			var center = SMap.Coords.fromWGS84(14.400307, 50.071853);
+			var m = new SMap(JAK.gel("m"), center, 5);
+			m.addDefaultLayer(SMap.DEF_TURIST).enable();
+			m.addDefaultControls();
+			
+			
+			var altitude_lookup_running = false;
+			var altitude_success = 1; /* 1 == not finished, 0==success, -1 == rejected */
+			var altitude_value = NaN;
+			var casovac;
+			var track_point_index = -1;
+			var number_of_track_points;
+			var altitude_array = [];
+			var x_array = [];
+			var y_array = [];
+			var gpx;
+			
+			function altitudeResponse(a) {
+				altitude_success = 0;
+				altitude_lookup_running = false;
+				altitude_value = a;
+				console.log("Vyska = " + altitude_value);
+			}
+			function altitudeRejectedResponse(a) {
+				altitude_success = -1;
+				altitude_lookup_running = false;
+				alert("Volani getAltitude selhalo");
+				throw 'Altitude Lookup Failed';
+			} 
+			
+			function iterate_track(){
+			
+				var x;
+				var y;
+				var coords;
+			
+				if(altitude_lookup_running){
+					// we are still getting the altitude, pass
+					return;
+				}
+				
+							
+				if(altitude_success == -1){
+					// there was something wrong, exit
+					clearInterval(casovac);
+					alert("Behem proceseni se stala chyba, koncim, upss...");
+					return;
+				}
+				
+				if(altitude_success == 0){
+					// last run worked fine, so save the altitude
+					x = gpx._tracks[0]._coords[track_point_index].x;
+					y = gpx._tracks[0]._coords[track_point_index].y;
+					
+					altitude_array.push(altitude_value);
+					x_array.push(x);
+					y_array.push(y);
+				}
+				
+				
+				//increment and run lookup again;
+				track_point_index = track_point_index + 1;
+				
+				if(track_point_index==number_of_track_points){
+					// we're done
+					clearInterval(casovac);
+					write_results_to_p();
+					alert("Hotovo...");
+					return;
+				}
+				
+				altitude_lookup_running = true;
+				altitude_success = 1; /* 1 == not finished, 0==success, -1 == rejected */
+				altitude_value = NaN;
+				x = gpx._tracks[0]._coords[track_point_index].x;
+				y = gpx._tracks[0]._coords[track_point_index].y;
+				coords = SMap.Coords.fromWGS84(x, y);
+				coords.getAltitude().then(altitudeResponse).catch(altitudeRejectedResponse);
+				
+			}
+			
+			function write_results_to_p(){
+				var paragraph = document.getElementById("output_text"); 
+				paragraph.innerHTML = "";
+				
+				for (i = 0; i < number_of_track_points; i++) {
+					paragraph.innerHTML += x_array[i] + ", " + y_array[i] + ", " + altitude_array[i] + "<br>";
+				}
+			}
+			
+			
+			function load() { /* Funkce volani po stisku tlacitka */
+				var value = JAK.gel("gpx").value.trim();
+				if (!value) { return alert("Vlozte do textoveho pole obsah GPX souboru"); }
+				var xmlDoc = JAK.XML.createDocument(value);
+
+				gpx = new SMap.Layer.GPX(xmlDoc, null, {maxPoints:500}); /* GPX vrstva */
+				m.addLayer(gpx); /* Pridame ji do mapy */
+				gpx.enable();    /* Zapnout vrstvu */
+				gpx.fit();       /* Nastavit mapu tak, aby byla GPX trasa dobre videt */
+				
+				number_of_track_points = gpx._tracks[0]._coords.length;
+				
+				
+				altitude_lookup_running = false;
+				altitude_success = 1; /* 1 == not finished, 0==success, -1 == rejected */
+				altitude_value = NaN;
+				track_point_index = -1;
+				altitude_array = [];
+				x_array = [];
+				y_array = [];
+				
+				var paragraph = document.getElementById("output_text"); 
+				paragraph.innerHTML = "Nacitani vysek jednotlivych bodu.";
+				
+				casovac = window.setInterval(iterate_track, 10);
+			}
+		</script>
+    </body>
+</html>
